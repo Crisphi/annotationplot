@@ -12,11 +12,13 @@ from shapely.geometry import Polygon, LineString
 from PIL import Image
 
 #set up ditctionaries
+
+#Relation between the precalculated label mappings for each imagefile in the dataset (csv) and the actual metadata of the dataset with the coordinates of the labels (json)
 metadataRelations = {
         "Ambrosiana_annotations.csv":"Ambrosiana_exported_finished_json.json" ,
         "Artstor_annotations.csv":"Artstor_exported_finished_json.json",
         "Ashmolean_annotations.csv":"Ashmolean_exported_finished_json.json",
-        #"BeniCulturali_annotations.csv":"BeniCulturaliModified_exported_finished_json.json",
+        #"BeniCulturali_annotations.csv":"BeniCulturaliModified_exported_finished_json.json", (There where some issues with the BeniCulturali Dataset. Because of deadlines the dataset was left out)
         "Boijmans_annotations.csv":"Bojimans_exported_finished_json.json",
         "British-Libraries_annotations.csv":"British_Libraries_exported_finished_json.json",
         "Cini_annotations.csv":"Cini_exported_finished_json.json",
@@ -28,6 +30,7 @@ metadataRelations = {
         "wga_annotations.csv":"wga_exported_finished_json.json"
         }
 
+#Relation between the datasets and the folder names in which the associated images are stored
 pictureRelations = {
         "Ambrosiana_annotations.csv": "Ambrosiana",
         "Artstor_annotations.csv":"Artstor",
@@ -44,6 +47,7 @@ pictureRelations = {
         "wga_annotations.csv":"wga"
         }
 
+# custom dict structure for temporary storage of files, images and associated metadata per dataset
 datasetDict_flower = {
             "ambrosiana_flowers" : {"files": [], "csv_Metadata": "Ambrosiana_annotations.csv"},
             "artstor_flowers" : {"files": [], "csv_Metadata": "Artstor_annotations.csv"},
@@ -61,12 +65,12 @@ datasetDict_flower = {
         }
 
 
-os.chdir("pathxy")
+os.chdir("pathxy") #change directory to folder where results from csvReader.py are stored
 
 #get all imagefiles, sort them according to associated dataset and save them in dict
 with open("flowerVase.csv", newline="") as csvfile:
-    flowers = csv.DictReader(csvfile, delimiter=",")
-    for row in flowers:
+    flowers = csv.DictReader(csvfile, delimiter=",") #open generated csv file flowerVase.csv from csvReader.py
+    for row in flowers: #loop through all entries in csv, sort them according to associated dataset and save them in dict
         if(row["dataset"] == "Ambrosiana_annotations.csv"):
             datasetDict_flower["ambrosiana_flowers"]["files"].append({"filename": row["image_file"], "regions" :[]})
         elif(row["dataset"] == "Artstor_annotations.csv"):
@@ -95,78 +99,75 @@ with open("flowerVase.csv", newline="") as csvfile:
             datasetDict_flower["wga_flowers"]["files"].append({"filename":row["image_file"], "regions" :[]})
         else:
             print("No matching Dataset found: ", row["dataset"])
-#for x,y in datasetDict_flower.items():
-#    print(x,y)
 
-os.chdir("pathxy")
-#get all regions from the according json files tagged with "flower"
+
+os.chdir("pathxy") #change directory to folder where annotation metadata is saved
+#get all regions from the according json files tagged with "flower vase"
 #convert polygon coordinates to rect coordinates
 #save them in dict
 failures = []
-for values in datasetDict_flower.values():
-    with open(metadataRelations[values["csv_Metadata"]], "r") as read_file:
-        data = json.load(read_file)
-    for file in values["files"]:
-        for entry in data.values():
-            if(entry["filename"] == file["filename"]):
-                for region in entry["regions"]:
+for values in datasetDict_flower.values(): #loop through all datasets and their associated values
+    with open(metadataRelations[values["csv_Metadata"]], "r") as read_file: # for each dataset: open associated json metadata file
+        data = json.load(read_file) #convert json in python dict
+    for file in values["files"]: #loop through all associated image files for the current dataset
+        for entry in data.values(): #loop through all entries in the metadata (there is one entry for every annotated image file)
+            if(entry["filename"] == file["filename"]): #If filenames of current image file and metadata entry are the same
+                for region in entry["regions"]: #loop through all annotated regions in this specific entry for the image file
                     if "object/attribute/figure" in region["region_attributes"]:
-                        if(region["region_attributes"]["object/attribute/figure"] == "flower vase"):
-                            if(region["shape_attributes"]["name"] == "polygon"):
+                        if(region["region_attributes"]["object/attribute/figure"] == "flower vase"): #if region has the wished label (flower vase)
+                            if(region["shape_attributes"]["name"] == "polygon"): #if the region has the shape of a polygon (Polygons cannot be handled in later steps so they have to be converted into rects)
                                 polytemp = [];
-                                for i in range(len(region["shape_attributes"]["all_points_x"])):
+                                for i in range(len(region["shape_attributes"]["all_points_x"])): #get all points of the polygon
                                     coordtemp = [region["shape_attributes"]["all_points_x"][i], region["shape_attributes"]["all_points_y"][i]]
-                                    polytemp.append(coordtemp)
-                                polygon = Polygon(polytemp)
-                                poly_bbox = polygon.bounds
+                                    polytemp.append(coordtemp) #save them in a list
+                                polygon = Polygon(polytemp) #create a python polygon object out of them
+                                poly_bbox = polygon.bounds #get the bounding box (a list of the coordinates of the surrounding rectangle) of this newly created polygon
 
-                                x = poly_bbox[0]
-                                y = poly_bbox[1]
-                                #width = poly_bbox[2] - poly_bbox[0]
-                                height = poly_bbox[3] - poly_bbox[1]
-                                width = height*0.75
-                                rectRegion = {
+                                x = poly_bbox[0] #save associated x value of bounding box
+                                y = poly_bbox[1] #save associated y value of bounding box
+                                height = poly_bbox[3] - poly_bbox[1] #calculate height out of bounding box coordinates
+                                width = height*0.75 #calculate width relative to height to get the wanted aspect ratio
+                                rectRegion = { #create an artificial rect region to replace the polygon region
                                     "name": "rect",
                                     "x": x,
                                     "y": y,
                                     "width": width,
                                     "height": height
                                     }
-                                file["regions"].append(rectRegion)
-                            elif(region["shape_attributes"]["name"] == "polyline"):
+                                file["regions"].append(rectRegion) #append this newly created rect region to regions of the current file
+                            elif(region["shape_attributes"]["name"] == "polyline"): #if the region has the shape of a polyline (Polylines cannot be handled in later steps so they have to be converted into rects)
                                 linetemp = [];
-                                for i in range(len(region["shape_attributes"]["all_points_x"])):
+                                for i in range(len(region["shape_attributes"]["all_points_x"])): #get all points of the polyline
                                     coordtemp = [region["shape_attributes"]["all_points_x"][i], region["shape_attributes"]["all_points_y"][i]]
-                                    linetemp.append(coordtemp)
-                                polyline = LineString(linetemp)
-                                line_bbox = polyline.bounds
+                                    linetemp.append(coordtemp) #save them in a list
+                                polyline = LineString(linetemp) #create a python LineString object out of them
+                                line_bbox = polyline.bounds #get the bounding box (a list of the coordinates of the surrounding rectangle) of this newly created linestring/polyline
 
-                                x = line_bbox[0]
-                                y = line_bbox[1]
-                                #width = line_bbox[3] - line_bbox[0]
-                                height = line_bbox[3] - line_bbox[0]
-                                width = height*0.75
-                                rectRegion = {
+                                x = line_bbox[0] #save associated x value of bounding box
+                                y = line_bbox[1] #save associated y value of bounding box
+                                height = line_bbox[3] - line_bbox[0] #calculate height out of bounding box coordinates
+                                width = height*0.75 #calculate width relative to height to get the wanted aspect ratio
+                                rectRegion = { #create an artificial rect region to replace the polyline region
                                     "name": "rect",
                                     "x": x,
                                     "y": y,
                                     "width": width,
                                     "height": height
                                     }
-                                file["regions"].append(rectRegion)
-                            else:
-                                x = region["shape_attributes"]["x"]
-                                y = region["shape_attributes"]["y"]
-                                height = region["shape_attributes"]["height"]
-                                width = height*0.75
-                                rectRegion = {
+                                file["regions"].append(rectRegion) #append this newly created rect region to regions of the current file
+                            else: #the region is of the type rect
+                                x = region["shape_attributes"]["x"] #get x coordinate out of attributes of the current region
+                                y = region["shape_attributes"]["y"] #get y coordinate out of attributes of the current region
+                                height = region["shape_attributes"]["height"] #get height out of attributes of the current region
+                                width = height*0.75 #calculate width relative to height to get the wanted aspect ratio
+                                rectRegion = { #create an artificial rect region with correct aspect ratio to replace the old rect region
                                     "name": "rect",
                                     "x": x,
                                     "y": y,
                                     "width": width,
                                     "height": height
                                     }
-                                file["regions"].append(rectRegion)
+                                file["regions"].append(rectRegion) #append this newly created rect region to regions of the current file
                     else:
                         #print("failed to find object/attribute/figure: ", region)
                         failures.append(region);
@@ -174,34 +175,43 @@ print("All failures:")
 print(failures)
 print("Number of failures ", len(failures))
 
-croppedList = []
+croppedList = [] #list for the individual images of flowervase regions
+
+#for debug just ignore
 testList = []
 testList2 = []
 
-for values in datasetDict_flower.values():
-    os.chdir("pathxy")
-    os.chdir(pictureRelations[values["csv_Metadata"]])
-    for file in values["files"]:
-        image = Image.open(file["filename"])
-        #print(values["csv_Metadata"])
-        #print(file["filename"])
+for values in datasetDict_flower.values(): #loop through each dataset and their values
+    os.chdir("pathxy") #change directory to folder where images of each dataset is saved
+    os.chdir(pictureRelations[values["csv_Metadata"]]) #change directory to image folder of current dataset
+    for file in values["files"]: #loop through all image filenames of current dataset
+        image = Image.open(file["filename"]) #open current imagefile as python image
+
+
+        #for debug just ignore
         testList2.append(file)
-        for region in file["regions"]:
+
+        for region in file["regions"]:  #loop through all region coordinates in current imagefile
+            #get coordinates
             x = int(region["x"])
             y= int(region["y"])
             x2 = int(region["x"] + region ["width"])
             y2 = int(region["y"] + region["height"])
-            #print(x,y,x2,y2)
-            #print(image.size)
-            testList.append(region)
-            cropped = image.crop((x, y, x2, y2))
-            croppedList.append(cropped)
 
+            #for debug just ignore
+            testList.append(region)
+
+            cropped = image.crop((x, y, x2, y2)) #crop image according to coordinates of current region
+            croppedList.append(cropped) #append this cropped image to list
+
+#for debug just ignore
 print("Number of cropped images ", len(croppedList))
 print("Number of regions ", len(testList))
 print("Number of files ", len(testList2))
-os.chdir("pathxy")
 
-for i in range(len(croppedList)):
+
+os.chdir("pathxy") #change directory to folder where you want to save the newly created images of all flower regions
+
+for i in range(len(croppedList)): #loop through all cropped images and save them as jpeg
     filename = str(i) + "cropped_flowerVase.jpeg"
     croppedList[i].save(filename)
